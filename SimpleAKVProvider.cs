@@ -4,7 +4,8 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider;
-using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Azure.Core;
+using Azure.Identity;
 using static Constants;
 
 namespace AKVProviderExample
@@ -14,7 +15,7 @@ namespace AKVProviderExample
         public static void Main()
         {
             // Initialize AKV provider
-            SqlColumnEncryptionAzureKeyVaultProvider sqlColumnEncryptionAzureKeyVaultProvider = new SqlColumnEncryptionAzureKeyVaultProvider(AzureActiveDirectoryAuthenticationCallback);
+            SqlColumnEncryptionAzureKeyVaultProvider sqlColumnEncryptionAzureKeyVaultProvider = new SqlColumnEncryptionAzureKeyVaultProvider(KeyVaultAuthenticationCallback);
 
             // Register AKV provider
             SqlConnection.RegisterColumnEncryptionKeyStoreProviders(customProviders: new Dictionary<string, SqlColumnEncryptionKeyStoreProvider>(capacity: 1, comparer: StringComparer.OrdinalIgnoreCase)
@@ -70,17 +71,15 @@ namespace AKVProviderExample
             }
         }
 
-        public static async Task<string> AzureActiveDirectoryAuthenticationCallback(string authority, string resource, string scope)
+        // This callback method only applies to provide access to Azure Key Vault.
+        // Follow tutorial and grant necessary privilges to managed identity used here:
+        // https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/tutorial-windows-vm-access-nonaad
+        public static async Task<string> KeyVaultAuthenticationCallback(string authority, string resource, string scope)
         {
-            var authContext = new AuthenticationContext(authority);
-            ClientCredential clientCred = new ClientCredential(s_clientId, s_clientSecret);
-            AuthenticationResult result = await authContext.AcquireTokenAsync(resource, clientCred);
-            if (result == null)
-            {
-                throw new InvalidOperationException($"Failed to retrieve an access token for {resource}");
-            }
-
-            return result.AccessToken;
+            return await Task.Run(() => new ManagedIdentityCredential().GetToken(new TokenRequestContext(new string [] {"https://vault.azure.net/.default"})).Token);
+            /********************** Alternatively, to use User Assigned Managed Identity *********************/
+            // var clientId = {clientId_of_UserAssigned_Identity};
+            // return await Task.Run(() => new ManagedIdentityCredential(clientId).GetToken(new TokenRequestContext(new string [] {"https://vault.azure.net/.default"})).Token);
         }
 
         private static void createCMK(SqlConnection sqlConnection, string cmkName)
